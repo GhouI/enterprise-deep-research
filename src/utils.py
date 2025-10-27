@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import logging
+import traceback
 from typing import Dict, Any, List, Optional
 from langsmith import traceable
 from tavily import TavilyClient
@@ -1194,6 +1195,259 @@ def tavily_search_proper(
         f"Failed to retrieve search results for query: '{query[:100]}...' after 5 retries."
     )
     return []
+
+
+@traceable
+@retry(
+    wait=wait_exponential(
+        multiplier=1, min=2, max=60
+    ),  # Start with 2s, then 4s, 8s, 16s, 32s, 60s
+    stop=stop_after_attempt(5),  # Try 5 times maximum
+    retry=retry_if_exception_type(
+        requests.exceptions.HTTPError
+    ),  # Only retry on HTTPError
+)
+def valyu_search(
+    query,
+    max_num_results=5,
+    search_type="all",
+    fast_mode=False,
+    is_tool_call=True,
+    response_length="medium",
+    include_raw_content=False,
+    config=None,
+):
+    """Search using Valyu DeepSearch API.
+
+    Searches across Valyu's comprehensive knowledge base including web content,
+    academic journals, financial data, and proprietary datasets. Returns AI-ready
+    search results optimized for RAG pipelines and agent workflows.
+
+    Args:
+        query (str): The search query to execute
+        max_num_results (int): Maximum number of results to return (default: 5)
+        search_type (str): Type of search to perform (default: "all")
+            - "all": Search web and proprietary sources
+            - "web": Web search only
+            - "proprietary": Research, financial, and premium sources only
+        fast_mode (bool): Enable fast mode for reduced latency (default: False)
+        is_tool_call (bool): Optimize for AI agent (True) vs user (False) queries (default: True)
+        response_length (str or int): Control content length per result (default: "medium")
+            - "short": ~25,000 characters per result
+            - "medium": ~50,000 characters per result
+            - "large": ~100,000 characters per result
+            - "max": Full content available
+            - int: Custom character limit
+        include_raw_content (bool): Whether to include raw_content in results (default: False)
+        config (RunnableConfig, optional): Configuration object for LangSmith tracing
+
+    Returns:
+        dict: Search response containing:
+            - results (list): List of search result dictionaries, each containing:
+                - title (str): Title of the document/article
+                - url (str): Canonical URL for the result
+                - content (str): Extracted text content (trimmed by response_length)
+                - raw_content (str): Full raw content if include_raw_content=True
+                - description (str): High-level summary
+                - source (str): High-level source category ("web", "academic", etc.)
+                - source_type (str): Specific source classification
+                - publication_date (str): ISO 8601 publication date when available
+                - relevance_score (float): Ranking score between 0 and 1
+                - price (float): Cost in USD for this result
+                - length (int): Character count of this result
+                - data_type (str): Data modality (e.g., "unstructured")
+                - id (str): Stable identifier or canonical reference
+                - image_url (dict): Images extracted from the page
+
+    Raises:
+        ValueError: If VALYU_API_KEY environment variable is not set
+        requests.exceptions.HTTPError: On API errors (with retry logic)
+    """
+
+    # Validate API key
+    api_key = os.getenv("VALYU_API_KEY")
+    if not api_key:
+        raise ValueError("VALYU_API_KEY environment variable is not set")
+
+    # Validate and sanitize query
+    query = query.strip()
+    if not query:
+        logger.error("Empty query after stripping whitespace")
+        return {
+            "results": [],
+            "error": "Empty query provided",
+            "query": "",
+            "success": False,
+        }
+
+    # Validate search_type
+    valid_search_types = ["all", "web", "proprietary"]
+    if search_type not in valid_search_types:
+        logger.warning(
+            f"Invalid search_type '{search_type}', defaulting to 'all'. "
+            f"Valid options: {valid_search_types}"
+        )
+        search_type = "all"
+
+    # Validate response_length
+    if isinstance(response_length, str):
+        valid_lengths = ["short", "medium", "large", "max"]
+        if response_length not in valid_lengths:
+            logger.warning(
+                f"Invalid response_length '{response_length}', defaulting to 'medium'. "
+                f"Valid options: {valid_lengths} or custom int"
+            )
+            response_length = "medium"
+    elif isinstance(response_length, int):
+        if response_length <= 0:
+            logger.warning(
+                f"Invalid response_length {response_length}, must be positive. "
+                f"Defaulting to 'medium'"
+            )
+            response_length = "medium"
+    else:
+        logger.warning(
+            f"Invalid response_length type {type(response_length)}, defaulting to 'medium'"
+        )
+        response_length = "medium"
+
+    # Log parameters for debugging
+    search_params = {
+        "query": query,
+        "max_num_results": max_num_results,
+        "search_type": search_type,
+        "fast_mode": fast_mode,
+        "is_tool_call": is_tool_call,
+        "response_length": response_length,
+        "include_raw_content": include_raw_content,
+    }
+    logger.info(f"Valyu search parameters:\n{json.dumps(search_params, indent=2)}")
+
+    try:
+        # Initialize Valyu client
+        from valyu import Valyu
+
+        valyu_client = Valyu(api_key=api_key)
+
+        # Log API call parameters
+        api_params = {
+            "query": query,
+            "max_num_results": max_num_results,
+            "search_type": search_type,
+            "fast_mode": fast_mode,
+            "is_tool_call": is_tool_call,
+            "response_length": response_length,
+        }
+        logger.info(f"Calling Valyu API with parameters:\n{json.dumps(api_params, indent=2)}")
+
+        # Execute search
+        response = valyu_client.search(
+            query=query,
+            max_num_results=max_num_results,
+            search_type=search_type,
+            fast_mode=fast_mode,
+            is_tool_call=is_tool_call,
+            response_length=response_length,
+        )
+
+        # Validate response structure
+        if not isinstance(response, dict):
+            logger.error(f"Unexpected response type from Valyu API: {type(response)}")
+            return {
+                "results": [],
+                "error": f"Unexpected response type: {type(response)}",
+                "query": query,
+                "success": False,
+            }
+
+        # Check for success
+        if not response.get("success", False):
+            error_msg = response.get("error", "Unknown error from Valyu API")
+            logger.error(f"Valyu API returned error: {error_msg}")
+            return {
+                "results": [],
+                "error": error_msg,
+                "query": query,
+                "success": False,
+            }
+
+        # Process results to add raw_content if requested
+        results = response.get("results", [])
+        for result in results:
+            if include_raw_content:
+                # If raw_content not provided, use content field
+                if "raw_content" not in result or result["raw_content"] is None:
+                    result["raw_content"] = result.get("content", "")
+            else:
+                # Remove raw_content if not requested
+                result["raw_content"] = None
+
+        # Log successful response
+        num_results = len(results)
+        total_cost = response.get("total_cost_dollars", 0)
+        logger.info(
+            f"Valyu search successful: {num_results} results returned, "
+            f"cost: ${total_cost:.4f}, "
+            f"tx_id: {response.get('tx_id', 'N/A')}"
+        )
+
+        return response
+
+    except ImportError as e:
+        error_msg = (
+            "Valyu Python SDK not installed. "
+            "Install with: pip install valyu"
+        )
+        logger.error(f"{error_msg} - {str(e)}")
+        return {
+            "results": [],
+            "error": error_msg,
+            "query": query,
+            "success": False,
+        }
+
+    except requests.exceptions.HTTPError as e:
+        # Handle specific HTTP error codes
+        status_code = e.response.status_code if hasattr(e, "response") else None
+
+        if status_code == 401:
+            error_msg = "Valyu API authentication error: Invalid API key"
+            logger.error(error_msg)
+            return {
+                "results": [],
+                "error": error_msg,
+                "query": query,
+                "success": False,
+            }
+        elif status_code == 422:
+            error_msg = f"Valyu API validation error: {e.response.text}"
+            logger.error(error_msg)
+            return {
+                "results": [],
+                "error": error_msg,
+                "query": query,
+                "success": False,
+            }
+        elif status_code == 429:
+            logger.warning(f"Valyu API rate limit exceeded. Retrying...")
+            raise  # Re-raise to trigger retry
+        elif status_code and status_code >= 500:
+            logger.warning(f"Valyu API server error {status_code}. Retrying...")
+            raise  # Re-raise to trigger retry
+        else:
+            logger.warning(f"Valyu API HTTP error {status_code}. Retrying...")
+            raise  # Re-raise to trigger retry
+
+    except Exception as e:
+        error_msg = f"Unexpected error in Valyu search: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {
+            "results": [],
+            "error": error_msg,
+            "query": query,
+            "success": False,
+        }
 
 
 def extract_author_and_year_from_content(

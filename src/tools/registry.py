@@ -13,7 +13,8 @@ from src.tools.search_tools import (
     GeneralSearchTool,
     AcademicSearchTool,
     GithubSearchTool,
-    LinkedinSearchTool
+    LinkedinSearchTool,
+    ValyuSearchTool
 )
 from src.tools.text2sql_tool import Text2SQLTool
 
@@ -57,7 +58,11 @@ class SearchToolRegistry:
             linkedin_search = LinkedinSearchTool()
             linkedin_search.config = self.config
             logger.info(f"[SearchToolRegistry._register_default_tools] Created LinkedinSearchTool instance")
-            
+
+            valyu_search = ValyuSearchTool()
+            valyu_search.config = self.config
+            logger.info(f"[SearchToolRegistry._register_default_tools] Created ValyuSearchTool instance")
+
             text2sql = Text2SQLTool()
             text2sql.config = self.config
             logger.info(f"[SearchToolRegistry._register_default_tools] Created Text2SQLTool instance")
@@ -68,6 +73,7 @@ class SearchToolRegistry:
             self.register_tool(github_search)
             self.register_tool(academic_search)
             self.register_tool(linkedin_search)
+            self.register_tool(valyu_search)
             self.register_tool(text2sql)
             
             logger.info(f"Registered {len(self.tools)} default search tools")
