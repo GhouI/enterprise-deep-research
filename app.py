@@ -4,8 +4,7 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from typing import Optional
 
 # Application version
@@ -117,15 +116,15 @@ except ImportError as e:
     logger.warning(f"⚠️ Simple steering API not available: {e}")
 
 
-# Mount the React build directory
-app.mount(
-    "/static",
-    StaticFiles(directory="ai-research-assistant/build/static"),
-    name="static",
-)
-app.mount(
-    "/", StaticFiles(directory="ai-research-assistant/build", html=True), name="root"
-)
+# Health check endpoint (must be before static file mounts)
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway and monitoring"""
+    return {
+        "status": "healthy",
+        "version": VERSION,
+        "service": "Deep Research API"
+    }
 
 
 @app.get("/")
@@ -135,6 +134,7 @@ async def root():
         "message": "Deep Research API is running",
         "version": VERSION,
         "endpoints": {
+            "GET /health": "Health check endpoint",
             "POST /deep-research": "Perform deep research on a topic with optional steering",
             "POST /api/files/upload": "Upload and analyze files",
             "GET /api/files/{file_id}/analysis": "Get file analysis results",
@@ -151,14 +151,6 @@ async def root():
         },
         "documentation": "/docs",
     }
-
-
-@app.get("/{path:path}")
-async def serve_react(path: str):
-    """Catch-all route for React app"""
-    if path.startswith("api/") or path.startswith("steering/"):
-        raise HTTPException(status_code=404, detail="API route not found")
-    return FileResponse("ai-research-assistant/build/index.html")
 
 
 if __name__ == "__main__":
