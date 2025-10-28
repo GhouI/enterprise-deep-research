@@ -68,6 +68,7 @@ try:
     from routers.research import router as research_router
     from routers.file_analysis import router as file_analysis_router
     from routers.database import router as database_router
+    from routers.tally_webhook import router as tally_webhook_router
 
     logger.info("Successfully imported routers")
 except ImportError as e:
@@ -102,6 +103,8 @@ app.add_middleware(
 app.include_router(research_router)
 app.include_router(file_analysis_router)
 app.include_router(database_router, prefix="/api/database")
+app.include_router(tally_webhook_router)
+logger.info("✅ Tally webhook API enabled")
 
 
 # Include simple steering router
@@ -142,6 +145,9 @@ async def root():
             "DELETE /api/database/{database_id}": "Delete uploaded database",
             "POST /steering/message": "Send steering messages during research",
             "GET /steering/plan/{session_id}": "Get current research plan",
+            "POST /api/tally/webhook": "Receive Tally form submissions and trigger workflow",
+            "GET /api/tally/workflow/{workflow_id}/status": "Check workflow execution status",
+            "GET /api/tally/workflows": "List recent workflow executions",
         },
         "documentation": "/docs",
     }

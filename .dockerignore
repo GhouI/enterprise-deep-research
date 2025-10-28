@@ -1,0 +1,90 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+docs/
+design/
+benchmarks/
+
+# Frontend (React build - not needed for API-only deployment)
+ai-research-assistant/
+node_modules/
+npm-debug.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+backend_logs.txt
+
+# Output files (will be generated at runtime)
+outputs/
+temp/
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Deployment configs for other platforms
+docker-compose.yml
+fly.toml
+vercel.json
+netlify.toml
+
+# Misc
+README.md
+LICENSE
+CONTRIBUTING.md
+CHANGELOG.md
+.editorconfig

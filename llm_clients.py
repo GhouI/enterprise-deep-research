@@ -29,6 +29,9 @@ SFR_GATEWAY_API_KEY = os.getenv("SFR_GATEWAY_API_KEY")
 SAMBNOVA_API_KEY = os.getenv("SAMBNOVA_API_KEY")
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "")
+OPENROUTER_SITE_NAME = os.getenv("OPENROUTER_SITE_NAME", "")
 
 # Token limit configurations for different providers
 # OpenAI token limits
@@ -112,6 +115,21 @@ MODEL_CONFIGS = {
         ],
         "default_model": "gemini-2.5-pro",
         "requires_api_key": GOOGLE_CLOUD_PROJECT,
+    },
+    # OpenRouter models (unified gateway for multiple providers)
+    "openrouter": {
+        "available_models": [
+            "anthropic/claude-sonnet-4.5",  # Latest Claude Sonnet 4.5 (May 2025)
+            "anthropic/claude-sonnet-4",  # Claude Sonnet 4 (May 2025)
+            "anthropic/claude-3.7-sonnet",  # Claude 3.7 Sonnet
+            "anthropic/claude-3.5-sonnet",  # Claude 3.5 Sonnet
+            "openai/gpt-4o",  # OpenAI GPT-4o
+            "openai/o4-mini",  # OpenAI o4-mini reasoning model
+            "google/gemini-2.5-pro",  # Google Gemini 2.5 Pro
+            "deepseek/deepseek-v3",  # DeepSeek V3
+        ],
+        "default_model": "anthropic/claude-sonnet-4",
+        "requires_api_key": OPENROUTER_API_KEY,
     },
 }
 
@@ -1168,7 +1186,7 @@ def get_llm_client(provider, model_name=None):
     Uses standard LangChain clients to ensure compatibility with features like bind_tools.
 
     Args:
-        provider: The provider name ('groq', 'openai', 'anthropic', 'sfrgateway', 'sambnova')
+        provider: The provider name ('groq', 'openai', 'anthropic', 'sfrgateway', 'sambnova', 'google', 'openrouter')
         model_name: The model name (optional, uses default if not provided)
 
     Returns:
@@ -1313,6 +1331,33 @@ def get_llm_client(provider, model_name=None):
             convert_system_message_to_human=True,  # Recommended for Gemini
             max_output_tokens=GOOGLE_MAX_OUTPUT_TOKENS,  # Using variable instead of hardcoded value
         )
+
+    elif provider == "openrouter":
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is not set in environment")
+        api_key = OPENROUTER_API_KEY
+        if not model_name:
+            model_name = MODEL_CONFIGS["openrouter"]["default_model"]
+
+        print(f"Using OpenRouter ChatOpenAI for {model_name}")
+
+        # Prepare default headers for OpenRouter
+        default_headers = {}
+        if OPENROUTER_SITE_URL:
+            default_headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+        if OPENROUTER_SITE_NAME:
+            default_headers["X-Title"] = OPENROUTER_SITE_NAME
+
+        # Use ChatOpenAI with OpenRouter's base URL
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers=default_headers if default_headers else None,
+            max_tokens=OPENAI_MAX_TOKENS,  # Use same token limit as OpenAI
+            streaming=False,
+        )
+
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -1324,7 +1369,7 @@ async def get_async_llm_client(provider, model_name=None):
     Uses standard LangChain async clients where available.
 
     Args:
-        provider: The provider name ('openai', 'anthropic', 'groq')
+        provider: The provider name ('openai', 'anthropic', 'groq', 'google', 'openrouter')
         model_name: The model name (optional, uses default if not provided)
 
     Returns:
@@ -1444,9 +1489,36 @@ async def get_async_llm_client(provider, model_name=None):
             convert_system_message_to_human=True,  # Recommended for Gemini
             max_output_tokens=GOOGLE_MAX_OUTPUT_TOKENS,  # Using variable instead of hardcoded value
         )
+    elif provider == "openrouter":
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is not set in environment")
+        api_key = OPENROUTER_API_KEY
+        if not model_name:
+            model_name = MODEL_CONFIGS["openrouter"]["default_model"]
+
+        logger.info(
+            f"[get_async_llm_client] Creating async OpenRouter ChatOpenAI client with model {model_name}"
+        )
+
+        # Prepare default headers for OpenRouter
+        default_headers = {}
+        if OPENROUTER_SITE_URL:
+            default_headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+        if OPENROUTER_SITE_NAME:
+            default_headers["X-Title"] = OPENROUTER_SITE_NAME
+
+        # Use ChatOpenAI with OpenRouter's base URL
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
+            default_headers=default_headers if default_headers else None,
+            max_tokens=OPENAI_MAX_TOKENS,  # Use same token limit as OpenAI
+            streaming=False,
+        )
     else:
         # For providers that don't have standard async clients via Langchain yet
-        supported_providers = ["openai", "anthropic"]
+        supported_providers = ["openai", "anthropic", "openrouter"]
         if GROQ_API_KEY:
             supported_providers.append("groq")
         if GOOGLE_CLOUD_PROJECT:  # Add google to supported list
